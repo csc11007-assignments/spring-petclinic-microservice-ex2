@@ -7,7 +7,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 git branch: "${BRANCH_NAME}", 
-                    url: 'https://github.com/spring-petclinic/spring-petclinic-microservices.git'
+                    url: 'https://github.com/csc11007-assignments/spring-petclinic-microservice-ex2.git'
             }
         }
         stage('Build and Push Images') {
@@ -34,8 +34,8 @@ pipeline {
                         sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
                         services.each { service ->
                             sh "mvn clean package -pl spring-petclinic-${service} -am -q"
-                            sh "docker build -t ${DOCKERHUB_REPO}/spring-petclinic-${service}:main ./spring-petclinic-${service}"
-                            sh "docker push ${DOCKERHUB_REPO}/spring-petclinic-${service}:main"
+                            sh 'docker build -t ${DOCKERHUB_REPO}/spring-petclinic-${service}:main ./spring-petclinic-${service}'
+                            sh 'docker push ${DOCKERHUB_REPO}/spring-petclinic-${service}:main'
                         }
                     }
                 }
