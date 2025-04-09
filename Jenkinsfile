@@ -35,7 +35,7 @@ pipeline {
                         services.each { service ->
                             def imageTag = "${DOCKERHUB_REPO}/spring-petclinic-${service}:main"
                             sh 'mvn clean package -pl spring-petclinic-' + service + ' -am -q'
-                            sh 'docker build -t ' + imageTag + ' ./spring-petclinic-' + service
+                            sh 'docker build -f Dockerfile.common -t ' + imageTag + ' ./spring-petclinic-' + service
                             sh 'docker push ' + imageTag
                         }
                     }
