@@ -34,8 +34,8 @@ pipeline {
                         sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
                         services.each { service ->
                             sh "mvn clean package -pl spring-petclinic-${service} -am -q"
-                            sh 'docker build -t ${DOCKERHUB_REPO}/spring-petclinic-${service}:main ./spring-petclinic-${service}'
-                            sh 'docker push ${DOCKERHUB_REPO}/spring-petclinic-${service}:main'
+                            sh "docker build -t ${DOCKERHUB_REPO}/spring-petclinic-${service}:main ./spring-petclinic-${service}"
+                            sh "docker push ${DOCKERHUB_REPO}/spring-petclinic-${service}:main"
                         }
                     }
                 }
