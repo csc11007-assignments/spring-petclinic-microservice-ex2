@@ -12,6 +12,9 @@ pipeline {
             }
         }
         stage('Build and Push Images') {
+            when {
+                branch 'main'
+            }
             steps {
                 script {
                     def services = [
