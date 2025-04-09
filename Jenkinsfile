@@ -11,7 +11,7 @@ pipeline {
                     url: 'https://github.com/csc11007-assignments/spring-petclinic-microservice-ex2.git'
             }
         }
-        stage('Detect Changed Service') {
+        stage('Detect Changed Services') {
             when {
                 not { branch 'main' }
             }
@@ -28,43 +28,50 @@ pipeline {
                         'admin-server'
                     ]
 
-                    def previousCommit = sh(script: 'git rev-parse HEAD^ || git rev-list --max-parents=0 HEAD', returnStdout: true).trim()
+                    def changedFiles = []
+                    try {
+                        changedFiles = sh(script: 'git diff --name-only HEAD~1 HEAD', returnStdout: true).trim().split("\n")
+                    } catch (Exception e) {
+                        changedFiles = sh(script: 'git diff --name-only $(git rev-list --max-parents=0 HEAD) HEAD', returnStdout: true).trim().split("\n")
+                    }
+                    echo "Changed files: ${changedFiles}"
 
-                    def changedService = null
+                    def changedServices = []
                     services.each { service ->
-                        def changes = sh(script: "git diff --name-only ${previousCommit} HEAD -- spring-petclinic-${service}", returnStdout: true).trim()
-                        if (changes) {
-                            changedService = service
+                        def serviceFolder = "spring-petclinic-${service}"
+                        if (changedFiles.any { file -> file.startsWith(serviceFolder) }) {
+                            changedServices << service
                             echo "Detected changes in service: ${service}"
                         }
                     }
 
-                    if (!changedService) {
+                    if (changedServices.isEmpty()) {
                         error "No changes detected in any service folder. Aborting build."
                     }
 
-                    env.CHANGED_SERVICE = changedService
+                    env.CHANGED_SERVICES = changedServices.join(',')
                 }
             }
         }
-        stage('Build and Push Feature Image') {
+        stage('Build and Push Feature Images') {
             when {
                 not { branch 'main' }
             }
             steps {
                 script {
-                    def serviceName = env.CHANGED_SERVICE
-                    def imageTag = "${COMMIT_ID}"
+                    def changedServices = env.CHANGED_SERVICES.split(',').toList()
                     withCredentials([usernamePassword(
                         credentialsId: 'dockerhub-credentials-id',
                         usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
                         sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
-                        def imageTagFull = "${DOCKERHUB_REPO}/spring-petclinic-${serviceName}:${imageTag}"
-                        sh 'mvn clean package -pl spring-petclinic-' + serviceName + ' -am -q'
-                        sh 'docker build -t ' + imageTagFull + ' ./spring-petclinic-' + serviceName
-                        sh 'docker push ' + imageTagFull
+                        changedServices.each { serviceName ->
+                            def imageTag = "${DOCKERHUB_REPO}/spring-petclinic:${serviceName}-${COMMIT_ID}"
+                            sh 'mvn clean package -pl spring-petclinic-' + serviceName + ' -am -q'
+                            sh 'docker build -t ' + imageTag + ' ./spring-petclinic-' + serviceName
+                            sh 'docker push ' + imageTag
+                        }
                     }
                 }
             }
