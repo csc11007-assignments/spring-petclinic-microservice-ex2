@@ -28,11 +28,13 @@ pipeline {
                         'admin-server'
                     ]
 
+                    def mainCommit = sh(script: 'git fetch origin main && git rev-parse origin/main', returnStdout: true).trim()
+
                     def changedFiles = []
                     try {
-                        changedFiles = sh(script: 'git diff --name-only HEAD~1 HEAD', returnStdout: true).trim().split("\n")
+                        changedFiles = sh(script: "git diff --name-only ${mainCommit} HEAD", returnStdout: true).trim().split("\n")
                     } catch (Exception e) {
-                        changedFiles = sh(script: 'git diff --name-only $(git rev-list --max-parents=0 HEAD) HEAD', returnStdout: true).trim().split("\n")
+                        changedFiles = sh(script: "git diff --name-only \$(git rev-list --max-parents=0 HEAD) HEAD", returnStdout: true).trim().split("\n")
                     }
                     echo "Changed files: ${changedFiles}"
 
