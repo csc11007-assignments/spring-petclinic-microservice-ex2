@@ -46,16 +46,19 @@ pipeline {
                     }
 
                     if (changedServices.isEmpty()) {
-                        error "No changes detected in any service folder. Aborting build."
+                        echo "No changes detected in any service folder. Skipping build and push."
+                    } else {
+                        env.CHANGED_SERVICES = changedServices.join(',')
                     }
-
-                    env.CHANGED_SERVICES = changedServices.join(',')
                 }
             }
         }
         stage('Build and Push Feature Images') {
             when {
-                not { branch 'main' }
+                allOf {
+                    not { branch 'main' }
+                    expression { env.CHANGED_SERVICES != null && env.CHANGED_SERVICES != '' }
+                }
             }
             steps {
                 script {

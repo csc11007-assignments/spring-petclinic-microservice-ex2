@@ -26,4 +26,3 @@ class PetclinicConfigServerApplicationTests {
 	}
 
 }
-// Change
