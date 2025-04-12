@@ -1,3 +1,4 @@
+# activate admin server
 spring:
   application:
     name: admin-server
