@@ -167,7 +167,7 @@ pipeline {
 
                     // Login to DockerHub once before the loop
                     withCredentials([usernamePassword(
-                        credentialsId: 'csc11007',
+                        credentialsId: 'dockerhub-credentials-id',
                         usernameVariable: 'DOCKERHUB_USER',
                         passwordVariable: 'DOCKERHUB_PASSWORD'
                     )]) {
