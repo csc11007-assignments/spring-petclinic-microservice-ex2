@@ -133,6 +133,7 @@ pipeline {
                     for (service in servicesList) {
                         echo "Building ${service}..."
                         dir(service) {
+                            sh 'chmod +x ../mvnw'
                             sh '../mvnw package -DskipTests -T 1C'
                         }
                     }
