@@ -58,11 +58,13 @@ pipeline {
                     echo "Raw changed files:\n${changes}"
 
                     // Changes have to be detected
+                    /*
                     if (!changes) {
                         echo "No changes detected. Skipping tests & build."
                         SERVICES_CHANGED = ""
                         return
                     }
+                    */
 
                     // Convert the list into an array
                     def changedFiles = changes.split("\n")
