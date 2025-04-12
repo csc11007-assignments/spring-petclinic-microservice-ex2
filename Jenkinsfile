@@ -73,7 +73,7 @@ pipeline {
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
                         changedServices.each { serviceName ->
                             def imageTag = "${DOCKERHUB_REPO}/spring-petclinic-${serviceName}:${COMMIT_ID}"
-                            sh 'mvn clean package -pl spring-petclinic-' + serviceName + ' -am -q'
+                            sh 'mvn clean package -pl spring-petclinic-' + serviceName + ' -am -q -B'
                             sh 'docker build -f Dockerfile.common -t ' + imageTag + ' ./spring-petclinic-' + serviceName
                             sh 'docker push ' + imageTag
                         }
