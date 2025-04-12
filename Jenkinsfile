@@ -97,8 +97,9 @@ pipeline {
                     // Ensure we have at least one changed service
                     if (changedServices.isEmpty()) {
                         echo "No relevant services changed. Skipping tests & build."
-                        SERVICES_CHANGED = ""
-                        return
+                        changedServices = services
+                        //SERVICES_CHANGED = ""
+                        //return
                     }
 
                     // Use properties() to persist the value
