@@ -220,14 +220,14 @@ pipeline {
                     
                     // Use credentials for Git operations
                     withCredentials([usernamePassword(
-                        credentialsId: 'github-credentials', 
+                        credentialsId: 'github-token', 
                         usernameVariable: 'GIT_USERNAME', 
                         passwordVariable: 'GIT_PASSWORD'
                     )]) {
                         // Clone with credentials
                         sh """
-                        git clone https://git@github.com/csc11007-assignments/spring-pet-clinic-microservices-configuration.git
-                        """
+    git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/csc11007-assignments/spring-pet-clinic-microservices-configuration.git
+    """
                         
                         dir('spring-pet-clinic-microservices-configuration') {
                             
