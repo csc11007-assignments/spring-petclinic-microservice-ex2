@@ -234,7 +234,7 @@ pipeline {
                             // Update image tags for each changed service
                             for (service in servicesList) {
                                 def shortServiceName = service.replaceFirst("spring-petclinic-", "")
-                                def valuesFile = "values/dev/values-${shortServiceName}.yaml"
+                                def valuesFile = "values/dev/${shortServiceName}_values.yaml"
                                 
                                 // Check if file exists and update with sed
                                 sh """
