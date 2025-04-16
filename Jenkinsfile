@@ -65,6 +65,17 @@ pipeline {
             steps {
                 script {
                     def changedServices = env.CHANGED_SERVICES.split(',').toList()
+                    def servicePorts = [
+                        'admin-server': 9090,
+                        'api-gateway': 8080,
+                        'config-server': 8888,
+                        'customers-service': 8081,
+                        'discovery-server': 8761,
+                        'genai-service': 8084,
+                        'vets-service': 8083,
+                        'visits-service': 8082
+                    ]
+                    
                     withCredentials([usernamePassword(
                         credentialsId: 'dockerhub-credentials-id',
                         usernameVariable: 'DOCKER_USER',
@@ -73,9 +84,19 @@ pipeline {
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
                         changedServices.each { serviceName ->
                             def imageTag = "${DOCKERHUB_REPO}/spring-petclinic-${serviceName}:${COMMIT_ID}"
+                            def servicePort = servicePorts[serviceName]
+                            
                             sh 'mvn clean package -pl spring-petclinic-' + serviceName + ' -am -q -B'
-                            sh 'docker build -f Dockerfile.common -t ' + imageTag + ' ./spring-petclinic-' + serviceName
-                            sh 'docker push ' + imageTag
+                            
+                            sh """
+                            docker build \\
+                                --build-arg SERVICE_NAME=${serviceName} \\
+                                --build-arg EXPOSED_PORT=${servicePort} \\
+                                -f Dockerfile \\
+                                -t ${imageTag} \\
+                                .
+                            docker push ${imageTag}
+                            """
                         }
                     }
                 }
