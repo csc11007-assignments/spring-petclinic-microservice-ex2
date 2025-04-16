@@ -82,22 +82,21 @@ pipeline {
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-                        changedServices.each { serviceName ->
-                            def imageTag = "${DOCKERHUB_REPO}/spring-petclinic-${serviceName}:${COMMIT_ID}"
-                            def servicePort = servicePorts[serviceName]
-                            
-                            sh 'mvn clean package -pl spring-petclinic-' + serviceName + ' -am -q -B'
-                            
-                            sh """
-                            docker build \\
-                                --build-arg SERVICE_NAME=${serviceName} \\
-                                --build-arg EXPOSED_PORT=${servicePort} \\
-                                -f Dockerfile \\
-                                -t ${imageTag} \\
-                                .
-                            docker push ${imageTag}
-                            """
-                        }
+                    }
+                    changedServices.each { serviceName ->
+                        def imageTag = "${DOCKERHUB_REPO}/spring-petclinic-${serviceName}:${COMMIT_ID}"
+                        def servicePort = servicePorts[serviceName]
+
+                        sh """
+                        mvn clean package -pl spring-petclinic-${serviceName} -am -q -B
+                        docker build \\
+                            --build-arg SERVICE_NAME=${serviceName} \\
+                            --build-arg EXPOSED_PORT=${servicePort} \\
+                            -f Dockerfile \\
+                            -t ${imageTag} \\
+                            .
+                        docker push ${imageTag}
+                        """
                     }
                 }
             }
