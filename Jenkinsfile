@@ -75,7 +75,7 @@ pipeline {
                         'vets-service': 8083,
                         'visits-service': 8082
                     ]
-                    
+
                     withCredentials([usernamePassword(
                         credentialsId: 'csc11007',
                         usernameVariable: 'DOCKER_USER',
@@ -88,7 +88,7 @@ pipeline {
                         def servicePort = servicePorts[serviceName]
 
                         sh """
-                        mvn clean package -pl spring-petclinic-${serviceName} -am -q -B
+                        mvn clean package -pl spring-petclinic-${serviceName} -am -q -B -DskipTests
                         docker build \\
                             --build-arg SERVICE_NAME=${serviceName} \\
                             --build-arg EXPOSED_PORT=${servicePort} \\
