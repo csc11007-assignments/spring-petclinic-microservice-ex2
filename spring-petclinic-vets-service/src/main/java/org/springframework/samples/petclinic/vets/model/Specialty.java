@@ -46,4 +46,3 @@ public class Specialty {
         this.name = name;
     }
 }
-// change
