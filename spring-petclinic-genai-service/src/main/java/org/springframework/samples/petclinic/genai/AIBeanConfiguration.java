@@ -27,10 +27,11 @@ public class AIBeanConfiguration {
 	VectorStore vectorStore(EmbeddingModel embeddingModel) {
 		return new SimpleVectorStore(embeddingModel);
 	}
-	
+
     @Bean
     @LoadBalanced
     public WebClient.Builder loadBalancedWebClientBuilder() {
         return WebClient.builder();
     }
 }
+// change

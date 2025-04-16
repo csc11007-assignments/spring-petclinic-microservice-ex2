@@ -1,10 +1,10 @@
 def SERVICES_CHANGED = ""
-def DEPLOY_ENV = "${params.ENVIRONMENT ?: 'dev'}" // Default is dev if not specified
+def DEPLOY_ENV = "${params.ENVIRONMENT ?: 'staging'}" // Default is staging for main
 pipeline {
     agent any
 
     stages {
-        stage('Detect Changes') {
+        stage('Detect Changes and Tags') {
             steps {
                 script {
                     echo "Checking if the repository is shallow..."
@@ -13,32 +13,25 @@ pipeline {
 
                     if (isShallow == "true") {
                         echo "Repository is shallow. Fetching full history..."
-                        sh 'git fetch origin main --prune --unshallow'
+                        sh 'git fetch origin main --prune --unshallow --tags'
                     } else {
                         echo "Repository is already complete. Skipping --unshallow."
-                        sh 'git fetch origin main --prune'
+                        sh 'git fetch origin main --prune --tags'
                     }
 
-                    echo "Fetching all branches..."
-                    sh 'git fetch --all --prune'
+                    echo "Fetching all branches and tags..."
+                    sh 'git fetch --all --prune --tags'
 
-                    echo "Checking if origin/main exists..."
-                    def mainExists = sh(script: "git branch -r | grep 'origin/main' || echo ''", returnStdout: true).trim()
-                    echo "Main branch exists: ${mainExists}"
+                    // Check for new tags
+                    def latestTag = sh(script: "git tag --sort=-creatordate | head -n 1", returnStdout: true).trim()
+                    def currentCommit = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
+                    def tagCommit = latestTag ? sh(script: "git rev-list -n 1 ${latestTag}", returnStdout: true).trim() : ""
 
-                    if (!mainExists) {
-                        echo "origin/main does not exist in remote. Fetching all branches..."
-                        sh 'git remote set-branches --add origin main'
-                        sh 'git fetch --all'
+                    def isTagBuild = (latestTag && tagCommit == currentCommit)
+                    env.TAG_NAME = isTagBuild ? latestTag : ""
+                    echo "Latest tag: ${latestTag}, Tag commit: ${tagCommit}, Current commit: ${currentCommit}, Is tag build: ${isTagBuild}"
 
-                        mainExists = sh(script: "git branch -r | grep 'origin/main' || echo ''", returnStdout: true).trim()
-                        echo "Main branch exists: ${mainExists}"
-                        if (!mainExists) {
-                            error("origin/main still does not exist!")
-                        }
-                    }
-
-                    // Use previous commit instead of merge-base for change detection
+                    // Detect changed services
                     def baseCommit
                     if (env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
                         baseCommit = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT
@@ -77,19 +70,12 @@ pipeline {
 
                     echo "Final changed services list: ${changedServices.join(', ')}"
 
-                    if (changedServices.isEmpty()) {
-                        echo "No relevant services changed. Skipping tests, build, and image creation."
-                        SERVICES_CHANGED = "" // Explicitly set to empty to skip later stages
+                    if (changedServices.isEmpty() && !isTagBuild) {
+                        echo "No relevant services changed and no new tag. Skipping build."
+                        SERVICES_CHANGED = ""
                     } else {
-                        // Use properties() to persist the value
-                        properties([
-                            parameters([
-                                string(name: 'SERVICES_CHANGED', defaultValue: changedServices.join(','), description: 'Services that changed in this build')
-                            ])
-                        ])
-
-                        SERVICES_CHANGED = changedServices.join(',')
-                        echo "Services changed (Global ENV): ${SERVICES_CHANGED}"
+                        SERVICES_CHANGED = isTagBuild ? services.join(',') : changedServices.join(',')
+                        echo "Services to process: ${SERVICES_CHANGED}"
                     }
                 }
             }
@@ -104,7 +90,7 @@ pipeline {
                     def servicesList = SERVICES_CHANGED.tokenize(',')
 
                     if (servicesList.isEmpty()) {
-                        echo "No changed services found. Skipping build."
+                        echo "No services to build. Skipping."
                         return
                     }
 
@@ -126,9 +112,10 @@ pipeline {
             steps {
                 script {
                     def servicesList = SERVICES_CHANGED.tokenize(',')
+                    def isTagBuild = env.TAG_NAME?.trim() != ""
 
                     if (servicesList.isEmpty()) {
-                        error("No changed services found. Verify 'Detect Changes' stage.")
+                        error("No services to build. Verify 'Detect Changes' stage.")
                     }
 
                     def servicePorts = [
@@ -155,8 +142,8 @@ pipeline {
 
                         def shortServiceName = service.replaceFirst("spring-petclinic-", "")
                         def servicePort = servicePorts.get(service, 8080)
-                        def commitHash = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                        def imageTag = "csc11007/${service}:${commitHash}"
+                        def tag = isTagBuild ? "main_${env.TAG_NAME}" : "main"
+                        def imageTag = "csc11007/${service}:${tag}"
 
                         sh """
                         docker build \\
@@ -164,12 +151,9 @@ pipeline {
                             --build-arg EXPOSED_PORT=${servicePort} \\
                             -f Dockerfile \\
                             -t ${imageTag} \\
-                            -t csc11007/${service}:latest \\
                             .
                         docker push ${imageTag}
-                        docker push csc11007/${service}:latest
                         docker rmi ${imageTag} || true
-                        docker rmi csc11007/${service}:latest || true
                         """
                     }
                 }
@@ -183,7 +167,8 @@ pipeline {
             steps {
                 script {
                     def servicesList = SERVICES_CHANGED.tokenize(',')
-                    def commitHash = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    def isTagBuild = env.TAG_NAME?.trim() != ""
+                    def tag = isTagBuild ? "main_${env.TAG_NAME}" : "main"
 
                     sh "rm -rf spring-pet-clinic-microservices-configuration || true"
 
@@ -193,18 +178,22 @@ pipeline {
                         passwordVariable: 'GIT_PASSWORD'
                     )]) {
                         sh """
-                        git clone https://github.com/csc11007-assignments/spring-pet-clinic-microservices-configuration.git
+                        git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/csc11007-assignments/spring-pet-clinic-microservices-configuration.git
                         """
 
                         dir('spring-pet-clinic-microservices-configuration') {
+                            def valuesFile = isTagBuild ? "charts/staging/values.yaml" : "charts/dev/values.yaml"
+                            
                             for (service in servicesList) {
                                 def shortServiceName = service.replaceFirst("spring-petclinic-", "")
-                                def valuesFile = "values/dev/${shortServiceName}_values.yaml"
-
                                 sh """
                                 if [ -f "${valuesFile}" ]; then
-                                    echo "Updating image tag in ${valuesFile}"
-                                    sed -i 's/\\(tag:\\s*\\).*/\\1"'${commitHash}'"/' ${valuesFile}
+                                    echo "Updating image tag for ${shortServiceName} in ${valuesFile}"
+                                    lineNumber=\$(grep -n "^[[:space:]]*${shortServiceName}:" ${valuesFile} | cut -d':' -f1)
+                                    if [ ! -z "\$lineNumber" ]; then
+                                        tagLine=\$((lineNumber + 3))
+                                        sed -i "\${tagLine}s/tag: .*/tag: ${tag}/" ${valuesFile}
+                                    fi
                                 else
                                     echo "Warning: ${valuesFile} not found"
                                 fi
@@ -215,11 +204,10 @@ pipeline {
                             git config user.email "jenkins@example.com"
                             git config user.name "Jenkins CI"
                             git status
-
                             if ! git diff --quiet; then
                                 git add .
-                                git commit -m "Update image tags for ${SERVICES_CHANGED} to ${commitHash}"
-                                git push
+                                git commit -m "Update image tags for ${SERVICES_CHANGED} to ${tag}"
+                                git push origin main
                                 echo "Successfully updated GitOps repository"
                             else
                                 echo "No changes to commit in GitOps repository"
