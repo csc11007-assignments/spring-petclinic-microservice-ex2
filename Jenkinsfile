@@ -38,17 +38,20 @@ pipeline {
                         }
                     }
 
-                    def baseCommit = sh(script: "git merge-base origin/main HEAD", returnStdout: true).trim()
-                    echo "Base commit: ${baseCommit}"
-
-                    if (!baseCommit) {
-                        error("Base commit not found! Ensure 'git merge-base origin/main HEAD' returns a valid commit.")
+                    // Use previous commit instead of merge-base for change detection
+                    def baseCommit
+                    if (env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
+                        baseCommit = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT
+                        echo "Using previous successful commit: ${baseCommit}"
+                    } else {
+                        baseCommit = sh(script: "git rev-parse HEAD~1", returnStdout: true).trim()
+                        echo "Using previous commit: ${baseCommit}"
                     }
 
                     def changes = sh(script: "git diff --name-only ${baseCommit} HEAD", returnStdout: true).trim()
                     echo "Raw changed files:\n${changes}"
 
-                    def changedFiles = changes.split("\n")
+                    def changedFiles = changes ? changes.split("\n") : []
                     def normalizedChanges = changedFiles.collect { file ->
                         file.replaceFirst("^.*?/spring-petclinic-microservices/", "")
                     }
