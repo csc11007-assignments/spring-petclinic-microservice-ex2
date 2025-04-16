@@ -3,6 +3,10 @@ def DEPLOY_ENV = "${params.ENVIRONMENT ?: 'staging'}" // Default is staging for 
 pipeline {
     agent any
 
+    triggers {
+        githubPush()
+    }
+
     stages {
         stage('Detect Changes and Tags') {
             steps {
@@ -177,9 +181,9 @@ pipeline {
                         usernameVariable: 'GIT_USERNAME',
                         passwordVariable: 'GIT_PASSWORD'
                     )]) {
-                        sh """
-                        git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/csc11007-assignments/spring-pet-clinic-microservices-configuration.git
-                        """
+                        sh '''
+                        git clone https://$GIT_USERNAME:$GIT_PASSWORD@github.com/csc11007-assignments/spring-pet-clinic-microservices-configuration.git
+                        '''
 
                         dir('spring-pet-clinic-microservices-configuration') {
                             def valuesFile = isTagBuild ? "charts/staging/values.yaml" : "charts/dev/values.yaml"
