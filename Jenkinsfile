@@ -53,10 +53,12 @@ pipeline {
                     serviceMap.each { service, port ->
                         def imageName = "${DOCKER_REGISTRY}/spring-petclinic-${service}:${params.tag_name}"
                         echo "Building Docker image for ${service} → ${imageName}"
-
+                        
+                        def moduleName = "spring-petclinic-${service}"
+                        
                         sh """
                             docker build \
-                              --build-arg SERVICE_NAME=${service} \
+                              --build-arg SERVICE_NAME=${moduleName} \
                               --build-arg EXPOSED_PORT=${port} \
                               -t ${imageName} .
                         """
