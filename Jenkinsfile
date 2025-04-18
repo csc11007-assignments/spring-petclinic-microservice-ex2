@@ -1,157 +1,101 @@
 pipeline {
     agent any
 
-    environment {
-        TAG_NAME = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7)}"
-        DOCKER_REGISTRY = 'csc11007'
-        BRANCH_NAME = "${env.BRANCH_NAME}"
-        COMMIT_ID = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+    parameters {
+        choice(name: 'JOB_TYPE', choices: ['none', 'developer_build', 'developer_build_manual_deletion'], description: 'Select job type for manual build')
+    }
+
+    triggers {
+        githubPush()
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Identify Changed Services') {
+        stage('Determine Trigger and Job') {
             steps {
                 script {
-                    def changedFiles = sh(script: "git diff --name-only ${env.GIT_COMMIT}^ ${env.GIT_COMMIT}", returnStdout: true)
-                    def services = []
-                    changedFiles.split('\n').each { file ->
-                        def parts = file.split('/')
-                        if (parts.size() > 0 && parts[0].startsWith("spring-petclinic-")) {
-                            services.add(parts[0].replace("spring-petclinic-", ""))
-                        }
+                    def ref = env.GIT_REF ?: sh(script: "git rev-parse --symbolic-full-name HEAD", returnStdout: true).trim()
+                    if (ref == "HEAD") {
+                        ref = env.BRANCH_NAME ? "refs/heads/${env.BRANCH_NAME}" : sh(script: "git symbolic-ref HEAD", returnStdout: true).trim()
                     }
-                    services = services.unique()
-                    echo "Services with changes: ${services.join(', ')}"
-                    env.CHANGED_SERVICES = services.join(',')
+                    echo "Current ref: ${ref}"
+
+                    def isTagBuild = ref.startsWith("refs/tags/")
+                    def isMainBranch = ref == "refs/heads/main"
+                    def isNonMainBranch = ref.startsWith("refs/heads/") && !isMainBranch
+                    def isManualBuild = params.JOB_TYPE != 'none'
+
+                    env.TAG_NAME = isTagBuild ? ref.replace("refs/tags/", "") : ""
+                    env.BRANCH_NAME = ref.startsWith("refs/heads/") ? ref.replace("refs/heads/", "") : ""
+
+                    echo "IsTagBuild: ${isTagBuild}, IsMainBranch: ${isMainBranch}, IsNonMainBranch: ${isNonMainBranch}, IsManualBuild: ${isManualBuild}"
+                    echo "TAG_NAME: ${env.TAG_NAME}, BRANCH_NAME: ${env.BRANCH_NAME}, JOB_TYPE: ${params.JOB_TYPE}"
+
+                    if (isTagBuild) {
+                        env.JENKINSFILE_PATH = "staging/Jenkinsfile"
+                        env.TRIGGER_TYPE = "staging"
+                    } else if (isNonMainBranch) {
+                        env.JENKINSFILE_PATH = "dev/Jenkinsfile"
+                        env.TRIGGER_TYPE = "dev"
+                    } else if (isManualBuild) {
+                        env.JENKINSFILE_PATH = "${params.JOB_TYPE}/Jenkinsfile"
+                        env.TRIGGER_TYPE = params.JOB_TYPE
+                    } else {
+                        echo "No job triggered. Push to main without tag or invalid trigger."
+                        env.JENKINSFILE_PATH = ""
+                        env.TRIGGER_TYPE = "none"
+                        return 
+                    }
+
+                    echo "Selected Jenkinsfile: ${env.JENKINSFILE_PATH}, Trigger: ${env.TRIGGER_TYPE}"
                 }
             }
         }
 
-        // stage('Test & coverage') {
-        //     when {
-        //         expression { env.CHANGED_SERVICES != '' }
-        //     }
-        //     steps {
-        //         script {
-        //             def services = env.CHANGED_SERVICES.split(',')
-        //             services.each { service ->
-        //                 echo "Running tests for service: ${service}"
-        //                 dir("spring-petclinic-${service}") {
-        //                     sh "mvn clean test jacoco:report"
-        //                     def zipName = "${service}-test-results-${env.TAG_NAME}.zip"
-        //                     sh "zip -r ${zipName} target/surefire-reports/ target/site/jacoco/"
-        //                     archiveArtifacts artifacts: "${zipName}", allowEmptyArchive: false
-
-        //                     if (!fileExists("target/site/jacoco/jacoco.xml")) {
-        //                         error("JaCoCo report not found!")
-        //                     }
-
-        //                     def xml = readFile("target/site/jacoco/jacoco.xml")
-        //                     def totalMissed = 0.0, totalCovered = 0.0
-        //                     def matches = (xml =~ /<counter type="INSTRUCTION" missed="([^"]*)" covered="([^"]*)"/)
-        //                     matches.each { m ->
-        //                         totalMissed += m[1].toFloat()
-        //                         totalCovered += m[2].toFloat()
-        //                     }
-
-        //                     def coverage = totalCovered / (totalCovered + totalMissed)
-        //                     if (coverage < 0.7) {
-        //                         error("Coverage too low: ${(coverage*100).round(2)}%")
-        //                     }
-        //                     echo "Coverage OK: ${(coverage*100).round(2)}%"
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-
-        stage('Build artifacts') {
-            when {
-                expression { env.CHANGED_SERVICES != '' }
-            }
+        stage('Checkout Jenkinsfile from Config Repo') {
+            when { expression { env.JENKINSFILE_PATH != "" } }
             steps {
                 script {
-                    def services = env.CHANGED_SERVICES.split(',')
-                    services.each { service ->
-                        echo "Packaging service: ${service}"
-                        dir("spring-petclinic-${service}") {
-                            sh "mvn clean package -DskipTests"
-                            def jarName = "spring-petclinic-${service}-${env.TAG_NAME}.jar"
-                            sh "mv target/spring-petclinic-${service}-*.jar target/${jarName}"
-                            archiveArtifacts artifacts: "target/${jarName}", allowEmptyArchive: false
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Build & Push Docker images') {
-            when {
-                expression { env.CHANGED_SERVICES != '' }
-            }
-            steps {
-                script {
-                    def serviceMap = [
-                        'config-server': '8888',
-                        'discovery-server': '8761',
-                        'customers-service': '8081',
-                        'visits-service': '8082',
-                        'vets-service': '8083',
-                        'genai-service': '8084',
-                        'api-gateway': '8080',
-                        'admin-server': '9090'
-                    ]
-
-                    withCredentials([usernamePassword(
-                        credentialsId: 'csc11007',
-                        usernameVariable: 'DOCKERHUB_USER',
-                        passwordVariable: 'DOCKERHUB_PASSWORD'
+                    dir('jenkins-config') {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'github-token',
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_PASSWORD'
                         )]) {
-                        sh "echo ${DOCKERHUB_PASSWORD} | docker login -u ${DOCKERHUB_USER} --password-stdin"
-                    }
-
-                    def imageTag = "${env.BRANCH_NAME}"
-
-                    def services = env.CHANGED_SERVICES.split(',')
-                    services.each { service ->
-                        def serviceName = "spring-petclinic-${service}"
-                        def port = serviceMap[service]
-                        if (!port) {
-                            echo "Skipping unknown service: ${service}"
-                            return
+                            git(
+                                branch: 'main',
+                                credentialsId: 'github-token',
+                                url: 'https://github.com/csc11007-assignments/spring-petclinic-jenkins-configuration.git'
+                            )
+                            def jenkinsfileContent = readFile(file: env.JENKINSFILE_PATH)
+                            echo "Loaded Jenkinsfile: ${env.JENKINSFILE_PATH}"
                         }
-                        
-                        echo "Building Docker for ${serviceName}"
-                       sh """
-                            docker build \
-                            --build-arg SERVICE_NAME=${serviceName} \
-                            --build-arg SERVICE_PORT=${port} \
-                            -t ${DOCKER_REGISTRY}/${serviceName}:${imageTag} .
-                        """
-                        sh "docker push ${DOCKER_REGISTRY}/${serviceName}:${imageTag}"
                     }
+                }
+            }
+        }
 
-                    sh 'docker logout'
+        stage('Run Selected Pipeline') {
+            when { expression { env.JENKINSFILE_PATH != "" } }
+            steps {
+                script {
+                    dir('jenkins-config') {
+                        load env.JENKINSFILE_PATH
+                    }
                 }
             }
         }
     }
 
     post {
+        always {
+            cleanWs()
+            echo "Pipeline completed. Trigger: ${env.TRIGGER_TYPE ?: 'none'}, Jenkinsfile: ${env.JENKINSFILE_PATH ?: 'none'}"
+        }
         success {
-            echo "Pipeline completed successfully!"
+            echo "Successfully executed ${env.TRIGGER_TYPE ?: 'none'} pipeline"
         }
         failure {
-            echo "Pipeline failed. Check logs."
-        }
-        always {
-            sh "docker system prune -f"
+            echo "Failed to execute ${env.TRIGGER_TYPE ?: 'none'} pipeline"
         }
     }
 }
