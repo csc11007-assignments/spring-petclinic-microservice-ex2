@@ -28,18 +28,6 @@ pipeline {
             }
         }
 
-        stage('Checkout source code repository') {
-            steps {
-                script {
-                    def GIT_TAG = params.tag_name?.trim()
-                    checkout([$class: 'GitSCM', 
-                        branches: [[name: "refs/tags/${GIT_TAG}"]], 
-                        userRemoteConfigs: [[url: 'https://github.com/csc11007-assignments/spring-petclinic-microservice-ex2.git']]
-                    ])
-                }
-            }
-        }
-
         stage('Build & Push docker images') {
             steps {
                 script {
