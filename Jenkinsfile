@@ -6,19 +6,21 @@ pipeline {
     }
 
     triggers {
-        githubPush()
+        githubPush() // Kích hoạt build cho branch push
     }
 
     stages {
         stage('Determine Trigger and Job') {
             steps {
                 script {
+                    // Lấy ref hiện tại
                     def ref = env.GIT_REF ?: sh(script: "git rev-parse --symbolic-full-name HEAD", returnStdout: true).trim()
                     if (ref == "HEAD") {
                         ref = env.BRANCH_NAME ? "refs/heads/${env.BRANCH_NAME}" : sh(script: "git symbolic-ref HEAD", returnStdout: true).trim()
                     }
                     echo "Current ref: ${ref}"
 
+                    // Kiểm tra sự kiện
                     def isTagBuild = ref.startsWith("refs/tags/")
                     def isMainBranch = ref == "refs/heads/main"
                     def isNonMainBranch = ref.startsWith("refs/heads/") && !isMainBranch
@@ -30,23 +32,28 @@ pipeline {
                     echo "IsTagBuild: ${isTagBuild}, IsMainBranch: ${isMainBranch}, IsNonMainBranch: ${isNonMainBranch}, IsManualBuild: ${isManualBuild}"
                     echo "TAG_NAME: ${env.TAG_NAME}, BRANCH_NAME: ${env.BRANCH_NAME}, JOB_TYPE: ${params.JOB_TYPE}"
 
+                    // Quyết định job cần chạy
                     if (isTagBuild) {
                         env.JENKINSFILE_PATH = "staging/Jenkinsfile"
                         env.TRIGGER_TYPE = "staging"
+                        env.PIPELINE_FUNC = "runStagingPipeline"
                     } else if (isNonMainBranch) {
                         env.JENKINSFILE_PATH = "dev/Jenkinsfile"
                         env.TRIGGER_TYPE = "dev"
+                        env.PIPELINE_FUNC = "runDevPipeline"
                     } else if (isManualBuild) {
                         env.JENKINSFILE_PATH = "${params.JOB_TYPE}/Jenkinsfile"
                         env.TRIGGER_TYPE = params.JOB_TYPE
+                        env.PIPELINE_FUNC = params.JOB_TYPE == 'developer_build' ? "runDeveloperBuildPipeline" : "runDeveloperBuildDeletionPipeline"
                     } else {
                         echo "No job triggered. Push to main without tag or invalid trigger."
                         env.JENKINSFILE_PATH = ""
                         env.TRIGGER_TYPE = "none"
-                        return 
+                        env.PIPELINE_FUNC = ""
+                        return
                     }
 
-                    echo "Selected Jenkinsfile: ${env.JENKINSFILE_PATH}, Trigger: ${env.TRIGGER_TYPE}"
+                    echo "Selected Jenkinsfile: ${env.JENKINSFILE_PATH}, Trigger: ${env.TRIGGER_TYPE}, Function: ${env.PIPELINE_FUNC}"
                 }
             }
         }
@@ -66,7 +73,6 @@ pipeline {
                                 credentialsId: 'github-token',
                                 url: 'https://github.com/csc11007-assignments/spring-petclinic-jenkins-configuration.git'
                             )
-                            def jenkinsfileContent = readFile(file: env.JENKINSFILE_PATH)
                             echo "Loaded Jenkinsfile: ${env.JENKINSFILE_PATH}"
                         }
                     }
@@ -75,11 +81,12 @@ pipeline {
         }
 
         stage('Run Selected Pipeline') {
-            when { expression { env.JENKINSFILE_PATH != "" } }
+            when { expression { env.JENKINSFILE_PATH != "" && env.PIPELINE_FUNC != "" } }
             steps {
                 script {
                     dir('jenkins-config') {
-                        load env.JENKINSFILE_PATH
+                        def script = load env.JENKINSFILE_PATH
+                        script."${env.PIPELINE_FUNC}"()
                     }
                 }
             }
