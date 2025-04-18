@@ -8,6 +8,16 @@ pipeline {
         COMMIT_ID = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
 
+    // just apply to feature branches
+    when { 
+        not {
+            branch 'dev'
+        }
+        not {
+            branch 'main'
+        }
+    }
+    
     stages {
         stage('Checkout') {
             steps {
@@ -116,7 +126,7 @@ pipeline {
                         sh "echo ${DOCKERHUB_PASSWORD} | docker login -u ${DOCKERHUB_USER} --password-stdin"
                     }
 
-                    def imageTag = "${env.BRANCH_NAME}"
+                    def imageTag = "${env.BRANCH_NAME}-${env.COMMIT_ID}"
 
                     def services = env.CHANGED_SERVICES.split(',')
                     services.each { service ->
