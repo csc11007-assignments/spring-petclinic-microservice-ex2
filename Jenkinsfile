@@ -116,7 +116,7 @@ pipeline {
                         sh "echo ${DOCKERHUB_PASSWORD} | docker login -u ${DOCKERHUB_USER} --password-stdin"
                     }
 
-                    def imageTag = "${env.BRANCH_NAME}-${env.COMMIT_ID}"
+                    def imageTag = "${env.BRANCH_NAME}"
 
                     def services = env.CHANGED_SERVICES.split(',')
                     services.each { service ->
