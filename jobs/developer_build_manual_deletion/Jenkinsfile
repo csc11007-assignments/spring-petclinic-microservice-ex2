@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    
+
     parameters {
         string(name: 'BUILD_NUMBER_TO_DELETE', defaultValue: '', description: 'Build number to delete deployment namespace')
     }
@@ -20,22 +20,21 @@ pipeline {
             }
         }
 
-        stage('Check namespace') {
+        stage('K8s Operations') {
             steps {
-                script {
-                    def nsExists = sh(script: "kubectl get namespace ${NAMESPACE} --no-headers || true", returnStdout: true).trim()
-                    if (nsExists) {
-                        echo "Namespace ${NAMESPACE} exists. Proceeding with deletion."
-                    } else {
-                        error "Namespace ${NAMESPACE} does not exist."
+                withKubeConfig([credentialsId: 'k8s-kubeconfig-creds']) {
+                    script {
+                        sh 'kubectl cluster-info' // <- test kết nối ra console
+                        def nsExists = sh(script: "kubectl get namespace ${NAMESPACE} --no-headers || true", returnStdout: true).trim()
+                        
+                        if (nsExists) {
+                            echo "Namespace ${NAMESPACE} exists. Proceeding to delete..."
+                            sh "kubectl delete namespace ${NAMESPACE}"
+                        } else {
+                            error "Namespace ${NAMESPACE} does not exist. Cannot delete."
+                        }
                     }
                 }
-            }
-        }
-
-        stage('Delete namespace') {
-            steps {
-                sh "kubectl delete namespace ${NAMESPACE}"
             }
         }
     }
