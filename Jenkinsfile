@@ -14,6 +14,9 @@ pipeline {
             steps {
                 script {
                     def ref = env.GIT_REF ?: sh(script: "git rev-parse --symbolic-full-name HEAD", returnStdout: true).trim()
+                    if (ref == "HEAD") {
+                        ref = env.BRANCH_NAME ? "refs/heads/${env.BRANCH_NAME}" : sh(script: "git symbolic-ref HEAD", returnStdout: true).trim()
+                    }
                     echo "Current ref: ${ref}"
 
                     def isTagBuild = ref.startsWith("refs/tags/")
@@ -27,7 +30,7 @@ pipeline {
                     echo "IsTagBuild: ${isTagBuild}, IsMainBranch: ${isMainBranch}, IsNonMainBranch: ${isNonMainBranch}, IsManualBuild: ${isManualBuild}"
                     echo "TAG_NAME: ${env.TAG_NAME}, BRANCH_NAME: ${env.BRANCH_NAME}, JOB_TYPE: ${params.JOB_TYPE}"
 
-                    if (isTagBuild && isMainBranch) {
+                    if (isTagBuild) {
                         env.JENKINSFILE_PATH = "staging/Jenkinsfile"
                         env.TRIGGER_TYPE = "staging"
                     } else if (isNonMainBranch) {
@@ -37,7 +40,10 @@ pipeline {
                         env.JENKINSFILE_PATH = "${params.JOB_TYPE}/Jenkinsfile"
                         env.TRIGGER_TYPE = params.JOB_TYPE
                     } else {
-                        error "No valid trigger detected. Tag push must be on main, branch push must be non-main, or manual build must specify JOB_TYPE."
+                        echo "No job triggered. Push to main without tag or invalid trigger."
+                        env.JENKINSFILE_PATH = ""
+                        env.TRIGGER_TYPE = "none"
+                        return 
                     }
 
                     echo "Selected Jenkinsfile: ${env.JENKINSFILE_PATH}, Trigger: ${env.TRIGGER_TYPE}"
@@ -46,18 +52,30 @@ pipeline {
         }
 
         stage('Checkout Jenkinsfile from Config Repo') {
+            when { expression { env.JENKINSFILE_PATH != "" } }
             steps {
                 script {
                     dir('jenkins-config') {
-                        git branch: 'main', url: 'https://github.com/csc11007-assignments/spring-petclinic-jenkins-configuration.git'
-                        def jenkinsfileContent = readFile(file: env.JENKINSFILE_PATH)
-                        echo "Loaded Jenkinsfile: ${env.JENKINSFILE_PATH}"
+                        withCredentials([usernamePassword(
+                            credentialsId: 'github-token',
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_PASSWORD'
+                        )]) {
+                            git(
+                                branch: 'main',
+                                credentialsId: 'github-token',
+                                url: 'https://github.com/csc11007-assignments/spring-petclinic-jenkins-configuration.git'
+                            )
+                            def jenkinsfileContent = readFile(file: env.JENKINSFILE_PATH)
+                            echo "Loaded Jenkinsfile: ${env.JENKINSFILE_PATH}"
+                        }
                     }
                 }
             }
         }
 
         stage('Run Selected Pipeline') {
+            when { expression { env.JENKINSFILE_PATH != "" } }
             steps {
                 script {
                     dir('jenkins-config') {
@@ -71,13 +89,13 @@ pipeline {
     post {
         always {
             cleanWs()
-            echo "Pipeline completed. Trigger: ${env.TRIGGER_TYPE}, Jenkinsfile: ${env.JENKINSFILE_PATH}"
+            echo "Pipeline completed. Trigger: ${env.TRIGGER_TYPE ?: 'none'}, Jenkinsfile: ${env.JENKINSFILE_PATH ?: 'none'}"
         }
         success {
-            echo "Successfully executed ${env.TRIGGER_TYPE} pipeline"
+            echo "Successfully executed ${env.TRIGGER_TYPE ?: 'none'} pipeline"
         }
         failure {
-            echo "Failed to execute ${env.TRIGGER_TYPE} pipeline"
+            echo "Failed to execute ${env.TRIGGER_TYPE ?: 'none'} pipeline"
         }
     }
 }
