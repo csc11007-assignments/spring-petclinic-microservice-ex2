@@ -28,6 +28,39 @@ pipeline {
             }
         }
 
+        stage('Checkout Repository') {
+            steps {
+                script {
+                    def GIT_TAG = params.tag_name?.trim()
+                    sh "git fetch --all"
+                    sh "git tag -l"
+                    sh "git checkout tags/${GIT_TAG}"
+                }
+            }
+        }
+
+        stage('Create & Push Git Tag') {
+            steps {
+                script {
+                    def NEW_TAG = "release-${params.tag_name}-${BUILD_NUMBER}"
+                    echo "Creating new tag: ${NEW_TAG}"
+                    
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-token', 
+                        usernameVariable: 'GIT_USERNAME', 
+                        passwordVariable: 'GIT_PASSWORD'
+                    )]) {
+                        sh """
+                            git config user.email "jenkins@example.com"
+                            git config user.name "Jenkins CI"
+                            git tag -a ${NEW_TAG} -m "Release tag created by Jenkins job #${BUILD_NUMBER}"
+                            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/csc11007-assignments/spring-petclinic-microservice-ex2.git ${NEW_TAG}
+                        """
+                    }
+                }
+            }
+        }
+
         stage('Build & Push docker images') {
             steps {
                 script {
