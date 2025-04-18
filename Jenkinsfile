@@ -1,5 +1,5 @@
 pipeline {
-    agent { label any }
+    agent any
 
     environment {
         TAG_NAME = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7)}"

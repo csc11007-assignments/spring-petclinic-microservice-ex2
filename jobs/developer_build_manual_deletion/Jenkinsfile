@@ -1,8 +1,6 @@
 pipeline {
-    agent {
-        label any
-    }
-
+    agent any
+    
     parameters {
         string(name: 'BUILD_NUMBER_TO_DELETE', defaultValue: '', description: 'Build number to delete deployment namespace')
     }
