@@ -4,7 +4,7 @@ WORKDIR /app
 COPY . .
 
 ARG SERVICE_NAME
-RUN mvn -X -pl ${SERVICE_NAME} -am clean package -DskipTests
+RUN mvn -B -pl ${SERVICE_NAME} -am clean package -DskipTests
 
 FROM openjdk:17-jdk
 WORKDIR /application
