@@ -6,15 +6,10 @@ pipeline {
         string(name: 'tag_name', defaultValue: '', description: 'Git tag for staging (required for manual staging build)')
     }
 
-    triggers {
-        githubPush()
-    }
-
     stages {
         stage('Determine Trigger and Job') {
             steps {
                 script {
-                    // Lấy nhánh từ GIT_BRANCH hoặc BRANCH_NAME
                     def branch = env.GIT_BRANCH ?: env.BRANCH_NAME ?: sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
                     if (branch.startsWith('origin/')) {
                         branch = branch.replace('origin/', '')
