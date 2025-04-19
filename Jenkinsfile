@@ -14,21 +14,23 @@ pipeline {
         stage('Determine Trigger and Job') {
             steps {
                 script {
-                    def ref = env.GIT_REF ?: sh(script: "git rev-parse --symbolic-full-name HEAD", returnStdout: true).trim()
-                    if (ref == "HEAD") {
-                        ref = env.BRANCH_NAME ? "refs/heads/${env.BRANCH_NAME}" : sh(script: "git symbolic-ref HEAD", returnStdout: true).trim()
+                    def branch = env.GIT_BRANCH ?: env.BRANCH_NAME ?: sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
+                    if (branch.startsWith('origin/')) {
+                        branch = branch.replace('origin/', '')
                     }
-                    echo "Current ref: ${ref}"
+                    echo "Detected branch: ${branch}"
+                    echo "Webhook payload: GIT_COMMIT=${env.GIT_COMMIT}, GIT_BRANCH=${env.GIT_BRANCH}, BRANCH_NAME=${env.BRANCH_NAME}"
 
-                    def isTagBuild = ref.startsWith("refs/tags/")
-                    def isMainBranch = ref == "refs/heads/main"
-                    def isNonMainBranch = ref.startsWith("refs/heads/") && !isMainBranch
+                    def isTagBuild = env.GIT_REF?.startsWith("refs/tags/") ?: false
+                    def isMainBranch = branch == "main"
+                    def isDevBranch = branch == "dev"
+                    def isFeatureBranch = !isMainBranch && !isDevBranch && branch != "" && !isTagBuild
                     def isManualBuild = params.JOB_TYPE != 'none'
 
-                    env.TAG_NAME = isTagBuild ? ref.replace("refs/tags/", "") : ""
-                    env.BRANCH_NAME = ref.startsWith("refs/heads/") ? ref.replace("refs/heads/", "") : ""
+                    env.TAG_NAME = isTagBuild ? env.GIT_REF.replace("refs/tags/", "") : ""
+                    env.BRANCH_NAME = branch
 
-                    echo "IsTagBuild: ${isTagBuild}, IsMainBranch: ${isMainBranch}, IsNonMainBranch: ${isNonMainBranch}, IsManualBuild: ${isManualBuild}"
+                    echo "IsTagBuild: ${isTagBuild}, IsMainBranch: ${isMainBranch}, IsDevBranch: ${isDevBranch}, IsFeatureBranch: ${isFeatureBranch}, IsManualBuild: ${isManualBuild}"
                     echo "TAG_NAME: ${env.TAG_NAME}, BRANCH_NAME: ${env.BRANCH_NAME}, JOB_TYPE: ${params.JOB_TYPE}"
 
                     if (isManualBuild) {
@@ -42,15 +44,20 @@ pipeline {
                         env.JENKINSFILE_PATH = "staging/Jenkinsfile"
                         env.TRIGGER_TYPE = "staging"
                         env.PIPELINE_FUNC = "runStagingPipeline"
-                    } else if (isNonMainBranch) {
-                        env.JENKINSFILE_PATH = "features/Jenkinsfile"
+                    } else if (isDevBranch) {
+                        env.JENKINSFILE_PATH = "dev/Jenkinsfile"
                         env.TRIGGER_TYPE = "dev"
                         env.PIPELINE_FUNC = "runDevPipeline"
+                    } else if (isFeatureBranch) {
+                        env.JENKINSFILE_PATH = "features/Jenkinsfile"
+                        env.TRIGGER_TYPE = "feature"
+                        env.PIPELINE_FUNC = "runFeaturePipeline"
                     } else {
-                        echo "No job triggered. Push to main without tag or invalid trigger."
+                        echo "No job triggered. Invalid branch: ${branch}"
                         env.JENKINSFILE_PATH = ""
                         env.TRIGGER_TYPE = "none"
                         env.PIPELINE_FUNC = ""
+                        currentBuild.result = 'SUCCESS'
                         return
                     }
 
