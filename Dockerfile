@@ -1,37 +1,28 @@
-# Build and extract layers from Spring Boot executable jar
-FROM eclipse-temurin:17 AS builder
+FROM maven:3.9.6-eclipse-temurin-17 AS build
 
-WORKDIR /application
+WORKDIR /app
+COPY . .
 
 ARG SERVICE_NAME
-ARG VERSION=3.4.1
-ARG ARTIFACT_NAME=spring-petclinic-${SERVICE_NAME}-${VERSION}
+RUN mvn -q -B -pl ${SERVICE_NAME} -am clean package -DskipTests
 
-COPY spring-petclinic-${SERVICE_NAME}/target/${ARTIFACT_NAME}.jar app.jar
-
-# Extract Spring Boot layers
-RUN java -Djarmode=layertools -jar app.jar extract
-
-# Runtime image 
-FROM eclipse-temurin:17-jre
-
+FROM openjdk:17-jdk
 WORKDIR /application
 
-# Parameterize the port (each service has its own port)
-ARG EXPOSED_PORT
-EXPOSE ${EXPOSED_PORT}
-
-# Common to all services
 ENV SPRING_PROFILES_ACTIVE=docker
+ENV JAVA_HOME=/usr/local/openjdk-17
+ENV PATH=$JAVA_HOME/bin:$PATH
 
-# Copy layers in optimal order for caching
-COPY --from=builder /application/dependencies/ ./
-RUN true
-COPY --from=builder /application/spring-boot-loader/ ./
-RUN true
-COPY --from=builder /application/snapshot-dependencies/ ./
-RUN true
-COPY --from=builder /application/application/ ./
+ARG SERVICE_PORT
+EXPOSE ${SERVICE_PORT}
 
-# Standard entrypoint for all services
-ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
+ARG SERVICE_NAME
+COPY --from=build /app/${SERVICE_NAME}/target/*.jar app.jar
+
+ARG SERVICE_NAME
+RUN if [ "$SERVICE_NAME" = "spring-petclinic-genai-service" ]; then \
+  jar xf app.jar; \
+  fi
+
+ARG SERVICE_NAME
+ENTRYPOINT ["/bin/sh", "-c", "if [ \"$SERVICE_NAME\" = \"spring-petclinic-genai-service\" ]; then java -cp BOOT-INF/lib/*:BOOT-INF/classes org.springframework.samples.petclinic.genai.GenAIServiceApplication; else java -jar app.jar; fi"]
