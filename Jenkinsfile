@@ -2,8 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        choice(name: 'JOB_TYPE', choices: ['none', 'staging'], description: 'Select job type for manual build')
-        string(name: 'tag_name', defaultValue: '', description: 'Git tag for staging (required for manual staging build)')
+        string(name: 'tag_name', defaultValue: '', description: 'Git tag for manual staging build (required for manual staging build)')
     }
 
     stages {
@@ -21,20 +20,20 @@ pipeline {
                     def isMainBranch = branch == "main"
                     def isDevBranch = branch == "dev"
                     def isFeatureBranch = !isMainBranch && !isDevBranch && branch != "" && !isTagBuild
-                    def isManualBuild = params.JOB_TYPE != 'none'
+                    def isManualBuild = params.tag_name?.trim()
 
                     env.TAG_NAME = isTagBuild ? env.GIT_REF.replace("refs/tags/", "") : ""
                     env.BRANCH_NAME = branch
 
                     echo "IsTagBuild: ${isTagBuild}, IsMainBranch: ${isMainBranch}, IsDevBranch: ${isDevBranch}, IsFeatureBranch: ${isFeatureBranch}, IsManualBuild: ${isManualBuild}"
-                    echo "TAG_NAME: ${env.TAG_NAME}, BRANCH_NAME: ${env.BRANCH_NAME}, JOB_TYPE: ${params.JOB_TYPE}"
+                    echo "TAG_NAME: ${env.TAG_NAME}, BRANCH_NAME: ${env.BRANCH_NAME}, tag_name: ${params.tag_name}"
 
                     if (isManualBuild) {
-                        if (params.JOB_TYPE == 'staging' && !params.tag_name?.trim()) {
+                        if (!params.tag_name?.trim()) {
                             error "tag_name is required for manual staging build"
                         }
-                        env.JENKINSFILE_PATH = "${params.JOB_TYPE}/Jenkinsfile"
-                        env.TRIGGER_TYPE = params.JOB_TYPE
+                        env.JENKINSFILE_PATH = "staging/Jenkinsfile"
+                        env.TRIGGER_TYPE = "staging"
                         env.PIPELINE_FUNC = "runStagingPipeline"
                     } else if (isTagBuild || isMainBranch) {
                         env.JENKINSFILE_PATH = "staging/Jenkinsfile"
