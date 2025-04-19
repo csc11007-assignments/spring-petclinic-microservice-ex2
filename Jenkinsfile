@@ -2,16 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        choice(name: 'JOB_TYPE', choices: ['none', 'staging', 'developer_build', 'developer_build_manual_deletion'], description: 'Select job type for manual build')
-        string(name: 'config_server', defaultValue: '', description: 'Tag for config-server (required for developer_build)')
-        string(name: 'discovery_server', defaultValue: '', description: 'Tag for discovery-server (required for developer_build)')
-        string(name: 'customers_service', defaultValue: '', description: 'Tag for customers-service (required for developer_build)')
-        string(name: 'visits_service', defaultValue: '', description: 'Tag for visits-service (required for developer_build)')
-        string(name: 'vets_service', defaultValue: '', description: 'Tag for vets-service (required for developer_build)')
-        string(name: 'genai_service', defaultValue: '', description: 'Tag for genai-service (required for developer_build)')
-        string(name: 'api_gateway', defaultValue: '', description: 'Tag for api-gateway (required for developer_build)')
-        string(name: 'admin_server', defaultValue: '', description: 'Tag for admin-server (required for developer_build)')
-        string(name: 'JOB_NAME_TO_DELETE', defaultValue: '', description: 'Job name for manual deletion (required for developer_build_manual_deletion)')
+        choice(name: 'JOB_TYPE', choices: ['none', 'staging'], description: 'Select job type for manual build')
         string(name: 'tag_name', defaultValue: '', description: 'Git tag for staging (required for manual staging build)')
     }
 
@@ -23,59 +14,50 @@ pipeline {
         stage('Determine Trigger and Job') {
             steps {
                 script {
-                    def ref = env.GIT_REF ?: sh(script: "git rev-parse --symbolic-full-name HEAD", returnStdout: true).trim()
-                    if (ref == "HEAD") {
-                        ref = env.BRANCH_NAME ? "refs/heads/${env.BRANCH_NAME}" : sh(script: "git symbolic-ref HEAD", returnStdout: true).trim()
+                    def branch = env.GIT_BRANCH ?: env.BRANCH_NAME ?: sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
+                    if (branch.startsWith('origin/')) {
+                        branch = branch.replace('origin/', '')
                     }
-                    echo "Current ref: ${ref}"
+                    echo "Detected branch: ${branch}"
+                    echo "Webhook payload: GIT_COMMIT=${env.GIT_COMMIT}, GIT_BRANCH=${env.GIT_BRANCH}, BRANCH_NAME=${env.BRANCH_NAME}"
 
-                    def isTagBuild = ref.startsWith("refs/tags/")
-                    def isMainBranch = ref == "refs/heads/main"
-                    def isNonMainBranch = ref.startsWith("refs/heads/") && !isMainBranch
+                    def isTagBuild = env.GIT_REF?.startsWith("refs/tags/") ?: false
+                    def isMainBranch = branch == "main"
+                    def isDevBranch = branch == "dev"
+                    def isFeatureBranch = !isMainBranch && !isDevBranch && branch != "" && !isTagBuild
                     def isManualBuild = params.JOB_TYPE != 'none'
 
-                    env.TAG_NAME = isTagBuild ? ref.replace("refs/tags/", "") : ""
-                    env.BRANCH_NAME = ref.startsWith("refs/heads/") ? ref.replace("refs/heads/", "") : ""
+                    env.TAG_NAME = isTagBuild ? env.GIT_REF.replace("refs/tags/", "") : ""
+                    env.BRANCH_NAME = branch
 
-                    echo "IsTagBuild: ${isTagBuild}, IsMainBranch: ${isMainBranch}, IsNonMainBranch: ${isNonMainBranch}, IsManualBuild: ${isManualBuild}"
+                    echo "IsTagBuild: ${isTagBuild}, IsMainBranch: ${isMainBranch}, IsDevBranch: ${isDevBranch}, IsFeatureBranch: ${isFeatureBranch}, IsManualBuild: ${isManualBuild}"
                     echo "TAG_NAME: ${env.TAG_NAME}, BRANCH_NAME: ${env.BRANCH_NAME}, JOB_TYPE: ${params.JOB_TYPE}"
 
                     if (isManualBuild) {
-                        if (params.JOB_TYPE == 'developer_build') {
-                            def requiredParams = [
-                                'config_server', 'discovery_server', 'customers_service',
-                                'visits_service', 'vets_service', 'genai_service',
-                                'api_gateway', 'admin_server'
-                            ]
-                            def missingParams = requiredParams.findAll { !params[it]?.trim() }
-                            if (missingParams) {
-                                error "Missing required parameters for developer_build: ${missingParams.join(', ')}"
-                            }
-                        } else if (params.JOB_TYPE == 'developer_build_manual_deletion') {
-                            if (!params.JOB_NAME_TO_DELETE?.trim()) {
-                                error "JOB_NAME_TO_DELETE is required for developer_build_manual_deletion"
-                            }
-                        } else if (params.JOB_TYPE == 'staging' && !params.tag_name?.trim()) {
+                        if (params.JOB_TYPE == 'staging' && !params.tag_name?.trim()) {
                             error "tag_name is required for manual staging build"
                         }
                         env.JENKINSFILE_PATH = "${params.JOB_TYPE}/Jenkinsfile"
                         env.TRIGGER_TYPE = params.JOB_TYPE
-                        env.PIPELINE_FUNC = params.JOB_TYPE == 'developer_build' ? "runDeveloperBuildPipeline" :
-                                            params.JOB_TYPE == 'developer_build_manual_deletion' ? "runDeveloperBuildDeletionPipeline" :
-                                            "runStagingPipeline"
+                        env.PIPELINE_FUNC = "runStagingPipeline"
                     } else if (isTagBuild || isMainBranch) {
                         env.JENKINSFILE_PATH = "staging/Jenkinsfile"
                         env.TRIGGER_TYPE = "staging"
                         env.PIPELINE_FUNC = "runStagingPipeline"
-                    } else if (isNonMainBranch) {
+                    } else if (isDevBranch) {
                         env.JENKINSFILE_PATH = "dev/Jenkinsfile"
                         env.TRIGGER_TYPE = "dev"
                         env.PIPELINE_FUNC = "runDevPipeline"
+                    } else if (isFeatureBranch) {
+                        env.JENKINSFILE_PATH = "features/Jenkinsfile"
+                        env.TRIGGER_TYPE = "feature"
+                        env.PIPELINE_FUNC = "runFeaturePipeline"
                     } else {
-                        echo "No job triggered. Push to main without tag or invalid trigger."
+                        echo "No job triggered. Invalid branch: ${branch}"
                         env.JENKINSFILE_PATH = ""
                         env.TRIGGER_TYPE = "none"
                         env.PIPELINE_FUNC = ""
+                        currentBuild.result = 'SUCCESS'
                         return
                     }
 
