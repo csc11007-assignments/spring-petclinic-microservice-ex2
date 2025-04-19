@@ -6,10 +6,6 @@ pipeline {
         string(name: 'tag_name', defaultValue: '', description: 'Git tag for staging (required for manual staging build)')
     }
 
-    triggers {
-        githubPush()
-    }
-
     stages {
         stage('Determine Trigger and Job') {
             steps {
