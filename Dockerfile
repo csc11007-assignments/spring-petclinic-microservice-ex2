@@ -4,7 +4,7 @@ WORKDIR /app
 COPY . .
 
 ARG SERVICE_NAME
-RUN mvn -pl ${SERVICE_NAME} -am clean package -DskipTests
+RUN mvn -B -q -pl ${SERVICE_NAME} -am clean package -DskipTests
 
 FROM openjdk:17-jdk
 WORKDIR /application
@@ -21,8 +21,8 @@ COPY --from=build /app/${SERVICE_NAME}/target/*.jar app.jar
 
 ARG SERVICE_NAME
 RUN if [ "$SERVICE_NAME" = "spring-petclinic-genai-service" ]; then \
-      jar xf app.jar; \
-    fi
+  jar xf app.jar; \
+  fi
 
 ARG SERVICE_NAME
 ENTRYPOINT ["/bin/sh", "-c", "if [ \"$SERVICE_NAME\" = \"spring-petclinic-genai-service\" ]; then java -cp BOOT-INF/lib/*:BOOT-INF/classes org.springframework.samples.petclinic.genai.GenAIServiceApplication; else java -jar app.jar; fi"]
