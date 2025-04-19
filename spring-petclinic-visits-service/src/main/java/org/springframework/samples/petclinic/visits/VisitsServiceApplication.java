@@ -31,5 +31,3 @@ public class VisitsServiceApplication {
     }
 }
 // changes
-// changes
-
