@@ -34,4 +34,3 @@ public class AIBeanConfiguration {
         return WebClient.builder();
     }
 }
-// change
